@@ -386,7 +386,12 @@ function startGame(){
   else if(d==='hard') G.n=4;
   else G.n=5;
 
-  G.secs = {easy:120,medium:120,hard:180,expert:240}[d];
+  // Timer de sesión: solo reiniciar si la sesión es nueva (primer puzzle o tras game over)
+  if(G.secs<=0){
+    var initT={easy:120,medium:180,hard:240,expert:300}[d];
+    G.secs=initT;
+  }
+  // (el tiempo se suma al resolver cada puzzle desde nextPuzzle())
 
   var sq;
   if(G.n===3) sq=make3();
@@ -668,6 +673,8 @@ function forceGameOver(){
   clearInterval(G.tmr);
   G.active=false; G.gameOver=true; G.streak=0;
   G.secs=0; tick();
+  saveSnap(false);
+  // Reset secs so next "Nuevo Puzzle" starts fresh
   addHist(false,0); updStats();
   showMod(false,0,0,0);
 }
@@ -675,23 +682,31 @@ function forceGameOver(){
 // ══════════════════════════════════════════════
 // GANAR
 // ══════════════════════════════════════════════
+function saveSnap(win,pts,tb,sb){
+  G.snap={
+    win:win,
+    name:document.getElementById('sName').value.trim()||'Anónimo',
+    diff:document.getElementById('sDiff').value,
+    pts:pts||0, tb:tb||0, sb:sb||0,
+    score:G.score, streak:G.streak, done:G.done,
+    board:G.board.slice(), n:G.n, magic:G.magic,
+    fixed:G.fixed.slice(),
+    sol:G.sol.reduce(function(a,r){return a.concat(r);},[]),
+    date:new Date()
+  };
+}
+
 function onWin(){
   clearInterval(G.tmr);
   G.active=false; G.done++; G.streak++;
 
-  var tb=Math.floor(G.secs*2);
+  var d2=document.getElementById('sDiff').value;
+  var tb={easy:15,medium:20,hard:25,expert:25}[d2]||20;
   var sb=G.streak>1?(G.streak-1)*15:0;
   var pts=Math.max(10,100+tb+sb);
   G.score+=pts;
 
-  G.snap={
-    name:document.getElementById('sName').value.trim()||'Anónimo',
-    diff:document.getElementById('sDiff').value,
-    pts:pts,tb:tb,sb:sb,
-    score:G.score,streak:G.streak,done:G.done,
-    board:G.board.slice(),n:G.n,magic:G.magic,
-    fixed:G.fixed.slice(),date:new Date()
-  };
+  saveSnap(true,pts,tb,sb);
 
   document.querySelectorAll('.cell:not(.fixed)').forEach(function(c){
     c.classList.add('good','pop');
@@ -706,7 +721,7 @@ function onWin(){
 // ══════════════════════════════════════════════
 function onWrong(){
   G.streak=0;
-  G.secs=Math.max(5,G.secs-20);
+  G.secs=Math.max(5,G.secs-15);
   msg('❌ Hay errores en las sumas. Se restan 20 segundos.','err');
 
   var bad={};
@@ -731,6 +746,8 @@ function onWrong(){
 // ══════════════════════════════════════════════
 function onTimeout(){
   G.active=false; G.gameOver=true; G.streak=0;
+  G.secs=0;
+  saveSnap(false);
   addHist(false,0); updStats();
   // Mostrar solución
   G.board=G.sol.reduce(function(a,r){return a.concat(r);},[]);
@@ -811,21 +828,31 @@ function showMod(win,pts,tb,sb){
     document.getElementById('mTi').textContent='¡Cuadrado Mágico Resuelto!';
     document.getElementById('mBo').innerHTML='Excelente trabajo, <strong>'+name+'</strong>.'
       +(G.streak>=2?'<br>🔥 <strong>Racha de '+G.streak+' seguidos!</strong>':'');
+    var m=Math.floor(G.secs/60).toString().padStart(2,'0');
+    var s=(G.secs%60).toString().padStart(2,'0');
     document.getElementById('mSt').innerHTML=
       '<div class="ms"><div class="msv">+'+pts+'</div><div class="msl">Puntos</div></div>'
-      +'<div class="ms"><div class="msv">+'+tb+'</div><div class="msl">Bonus tiempo</div></div>'
+      +'<div class="ms"><div class="msv">+'+tb+'s</div><div class="msl">Tiempo añadido</div></div>'
+      +'<div class="ms"><div class="msv">'+m+':'+s+'</div><div class="msl">Tiempo restante</div></div>'
       +'<div class="ms"><div class="msv">'+G.done+'</div><div class="msl">Resueltos</div></div>';
-    dlBtn.style.display='';  // mostrar descarga sólo en victoria
+    dlBtn.textContent='📥 Descargar certificado PNG (entrega)';
+    dlBtn.style.background='rgba(78,205,196,.11)';
+    dlBtn.style.borderColor='var(--ok)';
+    dlBtn.style.color='var(--ok)';
   } else {
-    document.getElementById('mIco').textContent='⏰';
+    document.getElementById('mIco').textContent='⌛';
     document.getElementById('mTi').textContent='Tiempo agotado';
-    document.getElementById('mBo').innerHTML='No has conseguido resolver el puzzle a tiempo, <strong>'+name+'</strong>.<br>Se muestra la solución correcta.';
+    document.getElementById('mBo').innerHTML='No has conseguido resolver el puzzle a tiempo, <strong>'+name+'</strong>.<br>Se muestra la solución correcta. Puedes descargar el resumen de la partida.';
     document.getElementById('mSt').innerHTML=
       '<div class="ms"><div class="msv">'+G.done+'</div><div class="msl">Resueltos</div></div>'
       +'<div class="ms"><div class="msv">'+G.score+'</div><div class="msl">Puntuación</div></div>';
-    dlBtn.style.display='none';  // sin descarga en derrota
+    dlBtn.textContent='📥 Descargar resumen PNG (entrega)';
+    dlBtn.style.background='rgba(255,107,107,.09)';
+    dlBtn.style.borderColor='var(--er)';
+    dlBtn.style.color='var(--er)';
   }
 
+  dlBtn.style.display='';  // siempre visible
   document.getElementById('ov').classList.add('show');
 }
 function closeMod(){ document.getElementById('ov').classList.remove('show'); }
@@ -839,9 +866,9 @@ function msg(txt,cls){
 // ══════════════════════════════════════════════
 function dlCert(){
   var d=G.snap;
-  if(!d){ alert('Resuelve un puzzle primero.'); return; }
+  if(!d){ alert('Finaliza una partida primero.'); return; }
 
-  var W=900,H=660;
+  var W=900, H=d.win?660:680;
   var cv=document.createElement('canvas');
   cv.width=W; cv.height=H;
   var x=cv.getContext('2d');
@@ -857,18 +884,19 @@ function dlCert(){
     x.beginPath(); x.arc(Math.random()*W,Math.random()*H,Math.random()*1.2+.3,0,Math.PI*2); x.fill();
   }
 
-  // Marco doble
-  x.strokeStyle='#c9a84c'; x.lineWidth=2.5;
+  // Marco — dorado en victoria, rojizo en derrota
+  var frameColor=d.win?'#c9a84c':'#9a4444';
+  x.strokeStyle=frameColor; x.lineWidth=2.5;
   rrx(x,16,16,W-32,H-32,14); x.stroke();
-  x.strokeStyle='rgba(201,168,76,.22)'; x.lineWidth=1;
+  x.strokeStyle=d.win?'rgba(201,168,76,.22)':'rgba(154,68,68,.22)'; x.lineWidth=1;
   rrx(x,26,26,W-52,H-52,10); x.stroke();
 
   // Esquinas decorativas
   [[28,28,1,1],[W-28,28,-1,1],[28,H-28,1,-1],[W-28,H-28,-1,-1]].forEach(function(q){
     x.save(); x.translate(q[0],q[1]); x.scale(q[2],q[3]);
-    x.strokeStyle='#c9a84c'; x.lineWidth=1.5;
+    x.strokeStyle=frameColor; x.lineWidth=1.5;
     x.beginPath(); x.moveTo(0,24); x.lineTo(0,0); x.lineTo(24,0); x.stroke();
-    x.fillStyle='#c9a84c'; x.beginPath(); x.arc(0,0,2.5,0,Math.PI*2); x.fill();
+    x.fillStyle=frameColor; x.beginPath(); x.arc(0,0,2.5,0,Math.PI*2); x.fill();
     x.restore();
   });
 
@@ -879,44 +907,70 @@ function dlCert(){
   x.fillText('IES SERRANÍA  ·  STEAM 4.0  ·  PROGRAMA DE INNOVACIÓN EDUCATIVA',W/2,58);
   gl(x,W/2,68,340);
 
-  // Título
-  x.fillStyle='#f0d080'; x.shadowColor='rgba(201,168,76,.5)'; x.shadowBlur=14;
-  x.font='bold 33px Georgia,serif';
-  x.fillText('CUADRADO MÁGICO RESUELTO',W/2,106);
+  // Título principal — diferente según victoria/derrota
+  x.shadowColor=d.win?'rgba(201,168,76,.5)':'rgba(255,107,107,.4)'; x.shadowBlur=14;
+  x.font='bold 31px Georgia,serif';
+  x.fillStyle=d.win?'#f0d080':'#ff9999';
+  x.fillText(d.win?'CUADRADO MÁGICO RESUELTO':'RESUMEN DE PARTIDA — TIEMPO AGOTADO',W/2,106);
   x.shadowBlur=0;
-  gl(x,W/2,116,260);
+  gl(x,W/2,116,d.win?260:320);
 
-  // Alumno
+  // Nombre alumno
   x.font='bold 20px Georgia,serif'; x.fillStyle='#e8e0ff';
   x.fillText(d.name,W/2,150);
   x.font='12px sans-serif'; x.fillStyle='#7a7aaa';
   var dlbl={easy:'Fácil (3×3)',medium:'Normal (3×3)',hard:'Difícil (4×4)',expert:'Experto (5×5)'}[d.diff];
   x.fillText('Dificultad: '+dlbl+'   ·   Número Mágico: '+d.magic,W/2,172);
 
+  // Nota game over
+  if(!d.win){
+    x.font='italic 12px sans-serif'; x.fillStyle='#ff9999';
+    x.fillText('Solución correcta del puzzle:',W/2,190);
+  }
+
   // ── Cuadrado mágico ──
+  // En derrota mostramos la SOLUCIÓN con las celdas del alumno marcadas si son erróneas
+  var displayBoard = d.win ? d.board : d.sol;
   var n=d.n;
-  var csMap={3:66,4:52,5:42};
-  var cs=csMap[n]||42, gap=5;
+  var csMap={3:66,4:52,5:42}; var cs=csMap[n]||42, gap=5;
   var gw=n*cs+(n-1)*gap;
-  var gx=W/2-gw/2, gy=192;
+  var gx=W/2-gw/2, gy=d.win?192:200;
 
   for(var ri=0;ri<n;ri++){
     for(var ci=0;ci<n;ci++){
       var idx=ri*n+ci;
       var px=gx+ci*(cs+gap), py=gy+ri*(cs+gap);
-      var isF=d.fixed[idx], val=d.board[idx];
+      var isF=d.fixed[idx];
+      var val=displayBoard[idx];
+      var alumnoVal=d.board[idx];
+      var isWrong=(!d.win && !isF && alumnoVal!==val);
+
       if(isF){
         var cg=x.createLinearGradient(px,py,px+cs,py+cs);
         cg.addColorStop(0,'#1e2040'); cg.addColorStop(1,'#16183a');
         x.fillStyle=cg;
-      } else { x.fillStyle='rgba(78,205,196,.1)'; }
+      } else if(isWrong){
+        x.fillStyle='rgba(255,107,107,.12)';
+      } else {
+        x.fillStyle='rgba(78,205,196,.1)';
+      }
       rrx(x,px,py,cs,cs,8); x.fill();
-      x.strokeStyle=isF?'#8b6914':'#4ecdc4'; x.lineWidth=1.5;
+
+      x.strokeStyle=isF?'#8b6914':(isWrong?'#ff6b6b':'#4ecdc4');
+      x.lineWidth=1.5;
       rrx(x,px,py,cs,cs,8); x.stroke();
+
       var fs={3:26,4:20,5:17}[n]||17;
       x.font='bold '+fs+'px Georgia,serif';
-      x.fillStyle=isF?'#f0d080':'#4ecdc4'; x.textAlign='center';
+      x.fillStyle=isF?'#f0d080':(isWrong?'#ff9999':'#4ecdc4');
+      x.textAlign='center';
       x.fillText(val,px+cs/2,py+cs/2+(n===3?9:7));
+
+      // Si derrota y el alumno puso algo diferente, mostrar debajo con tachado visual
+      if(isWrong && alumnoVal>0){
+        x.font=(n===3?10:8)+'px sans-serif'; x.fillStyle='rgba(255,107,107,.6)';
+        x.fillText('('+alumnoVal+')',px+cs/2,py+cs-4);
+      }
     }
   }
 
@@ -932,11 +986,11 @@ function dlCert(){
   }
 
   // ── Estadísticas ──
-  var sy=gy+gw+48;
-  var sts=[
-    ['PUNTOS','+'+d.pts],['BONUS TIEMPO','+'+d.tb],
-    ['RACHA',d.streak+'🔥'],['RESUELTOS',d.done],['TOTAL',d.score]
-  ];
+  var sy=gy+gw+(d.win?50:56);
+  var sts=d.win
+    ?[['PUNTOS','+'+d.pts],['BONUS TIEMPO','+'+d.tb],['RACHA',d.streak+'🔥'],['RESUELTOS',d.done],['TOTAL',d.score]]
+    :[['RESULTADO','Sin completar'],['RACHA',d.streak],['RESUELTOS',d.done],['PUNTUACIÓN',d.score]];
+
   var cw=(W-80)/sts.length;
   sts.forEach(function(s,i){
     var sx=40+i*cw+cw/2;
@@ -944,7 +998,8 @@ function dlCert(){
     rrx(x,sx-cw/2+4,sy-18,cw-8,52,8); x.fill();
     x.strokeStyle='rgba(201,168,76,.2)'; x.lineWidth=1;
     rrx(x,sx-cw/2+4,sy-18,cw-8,52,8); x.stroke();
-    x.font='bold 18px Georgia,serif'; x.fillStyle='#f0d080'; x.textAlign='center';
+    x.font='bold 18px Georgia,serif';
+    x.fillStyle=d.win?'#f0d080':'#ffaaaa'; x.textAlign='center';
     x.fillText(String(s[1]),sx,sy+8);
     x.font='9px sans-serif'; x.fillStyle='#7a7aaa';
     x.fillText(s[0],sx,sy+24);
@@ -954,12 +1009,13 @@ function dlCert(){
   var fecha=d.date.toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
   var hora=d.date.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
   x.font='12px sans-serif'; x.fillStyle='#7a7aaa'; x.textAlign='center';
-  x.fillText('Completado el '+fecha+' a las '+hora,W/2,sy+64);
+  x.fillText((d.win?'Completado':'Partida') +' el '+fecha+' a las '+hora,W/2,sy+64);
   x.fillText('Actividad: Cuadrados Mágicos — IES Serranía STEAM 4.0',W/2,sy+80);
 
   var a=document.createElement('a');
   var safe=d.name.replace(/\s+/g,'_').replace(/[^a-zA-Z0-9_áéíóúñÁÉÍÓÚÑ]/g,'');
-  a.download='CuadradoMagico_'+safe+'_'+d.date.toISOString().slice(0,10)+'.png';
+  var prefix=d.win?'CuadradoMagico':'CuadradoMagico_GameOver';
+  a.download=prefix+'_'+safe+'_'+d.date.toISOString().slice(0,10)+'.png';
   a.href=cv.toDataURL('image/png');
   a.click();
 }
@@ -981,10 +1037,21 @@ function gl(x,cx,y,hw){
 // ══════════════════════════════════════════════
 // EVENTOS
 // ══════════════════════════════════════════════
-document.getElementById('btnNew').addEventListener('click', startGame);
+document.getElementById('btnNew').addEventListener('click', function(){
+  // Reinicio manual: nueva sesión completa
+  G.secs=0; G.score=0; G.streak=0; G.done=0; G.gameOver=false;
+  startGame();
+});
 document.getElementById('btnClr').addEventListener('click', clearBoard);
 document.getElementById('btnVer').addEventListener('click', verify);
-document.getElementById('btnNext').addEventListener('click', function(){ closeMod(); startGame(); });
+document.getElementById('btnNext').addEventListener('click', function(){
+  closeMod();
+  // Añadir tiempo bonus al contador actual (no reiniciar)
+  var d2=document.getElementById('sDiff').value;
+  var bonusT={easy:15,medium:20,hard:25,expert:25}[d2]||20;
+  G.secs=Math.min(G.secs+bonusT, 300);
+  startGame();
+});
 document.getElementById('btnClose').addEventListener('click', closeMod);
 document.getElementById('btnDL').addEventListener('click', dlCert);
 document.getElementById('ov').addEventListener('click', function(e){ if(e.target===this) closeMod(); });
